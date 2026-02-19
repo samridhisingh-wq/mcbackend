@@ -3,15 +3,15 @@ import pandas as pd
 import time
 
 from app.validators import validate_csv
-from graph_builder import build_graph
-from detectors.cycle_detector import detect_cycles
-from detectors.smurfing_detector import detect_smurfing
-from detectors.shell_detector import detect_shell_chains
-from detectors.ring_merger import merge_rings
-from scoring import score_account
-from formatter import format_output
-from precision import apply_precision_logic
-from explanation import build_explanations
+from app.graph_builder import build_graph
+from app.detectors.cycle_detector import detect_cycles
+from app.detectors.smurfing_detector import detect_smurfing
+from app.detectors.shell_detector import detect_shell_chains
+from app.detectors.ring_merger import merge_rings
+from app.scoring import score_account
+from app.formatter import format_output
+from app.precision import apply_precision_logic
+from app.explanation import build_explanations
 
 app = FastAPI(
     title="MuleCatcher AML Engine",
