@@ -2,6 +2,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 import pandas as pd
 import time
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.validators import validate_csv
 from app.graph_builder import build_graph
 from app.detectors.cycle_detector import detect_cycles
@@ -17,6 +19,16 @@ app = FastAPI(
     title="MuleCatcher AML Engine",
     description="Explainable, deterministic AML decision-support system",
     version="2.0.0"
+)
+
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 @app.get("/health")
