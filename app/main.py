@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 import pandas as pd
 import time
 
-from validators import validate_csv
+from app.validators import validate_csv
 from graph_builder import build_graph
 from detectors.cycle_detector import detect_cycles
 from detectors.smurfing_detector import detect_smurfing
