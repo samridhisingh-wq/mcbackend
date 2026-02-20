@@ -1,9 +1,10 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import time
+import uuid
 
-from fastapi.middleware.cors import CORSMiddleware
-
+# Your existing modules
 from app.validators import validate_csv
 from app.graph_builder import build_graph
 from app.detectors.cycle_detector import detect_cycles
@@ -15,76 +16,120 @@ from app.formatter import format_output
 from app.precision import apply_precision_logic
 from app.explanation import build_explanations
 
+
 app = FastAPI(
     title="MuleCatcher AML Engine",
     description="Explainable, deterministic AML decision-support system",
     version="2.0.0"
 )
 
-
-
+# 🔥 CORS (IMPORTANT)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # allow all origins
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 @app.get("/health")
-def health_check():
+def health():
     return {"status": "running"}
+
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     start_time = time.time()
 
-    if not file.filename.endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files allowed")
-
     try:
         df = pd.read_csv(file.file)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid CSV format")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid CSV file")
 
-    validation = validate_csv(df)
+    # Validate
+    validate_csv(df)
 
-    if not all([validation["columns_valid"], validation["timestamp_valid"], validation["amount_valid"]]):
-        raise HTTPException(status_code=400, detail="CSV validation failed")
+    # Build graph
+    graph = build_graph(df)
 
-    G = build_graph(df)
+    # Run detections
+    cycles = detect_cycles(graph)
+    smurfing = detect_smurfing(graph)
+    shells = detect_shell_chains(graph)
 
-    cycles = detect_cycles(G)
-    smurfing = detect_smurfing(df)
-    shell_chains = detect_shell_chains(G)
+    rings = merge_rings(cycles + smurfing + shells)
 
-    rings = merge_rings(cycles + shell_chains)
+    # Score accounts
+    accounts = score_account(graph)
 
-    account_patterns = {}
+    # Apply precision logic
+    accounts = apply_precision_logic(accounts)
 
-    for c in cycles:
-        for acc in c:
-            account_patterns.setdefault(acc, set()).add("cycle")
+    # Add explanations
+    accounts = build_explanations(accounts)
 
-    for s in shell_chains:
-        for acc in s:
-            account_patterns.setdefault(acc, set()).add("shell")
+    # Format final output
+    accounts = format_output(accounts)
 
-    for s in smurfing:
-        account_patterns.setdefault(s["receiver"], set()).add("smurfing")
-
-    suspicious_accounts = []
-    for acc, patterns in account_patterns.items():
-        score = score_account(patterns)
-        score = apply_precision_logic(acc, score, G)
-        suspicious_accounts.append({
-            "account_id": acc,
-            "suspicion_score": score,
-            "detected_patterns": list(patterns),
+    # Build edges list for frontend
+    edges = []
+    for u, v, data in graph.edges(data=True):
+        edges.append({
+            "from": str(u),
+            "to": str(v),
+            "amount": data.get("amount", 0),
+            "count": data.get("count", 1)
         })
 
-    explanations = build_explanations(suspicious_accounts)
+    # Build suspicious accounts list (for compatibility)
+    suspicious_accounts = [
+        {
+            "account_id": acc["id"],
+            "suspicion_score": acc["riskScore"],
+            "detected_patterns": acc.get("patterns", [])
+        }
+        for acc in accounts
+        if acc["riskScore"] >= 40
+    ]
 
-    processing_time = time.time() - start_time
+    elapsed = round(time.time() - start_time, 2)
 
-    return format_output(suspicious_accounts, rings, processing_time, explanations)
+    # Build CaseRun object (matches frontend)
+    case = {
+        "id": f"CASE-{uuid.uuid4().hex[:8]}",
+        "date": time.strftime("%Y-%m-%d"),
+        "fileName": file.filename,
+        "datasetSize": len(df),
+        "nodeCount": len(accounts),
+        "edgeCount": len(edges),
+        "txCount": len(df),
+        "suspiciousCount": len(suspicious_accounts),
+        "ringCount": len(rings),
+        "processingTime": elapsed,
+        "riskExposure": max([acc["riskScore"] for acc in accounts] or [0]),
+        "timeWindow": "",
+        "topPatterns": list(
+            set(
+                pattern
+                for acc in suspicious_accounts
+                for pattern in acc.get("detected_patterns", [])
+            )
+        ),
+        "riskLevel": (
+            "high"
+            if len(suspicious_accounts) > 5
+            else "medium"
+            if len(suspicious_accounts) > 2
+            else "low"
+        ),
+    }
+
+    return {
+        "cases": [case],
+        "currentCase": case,
+        "accounts": accounts,
+        "rings": rings,
+        "edges": edges,
+        "suspicious_accounts": suspicious_accounts
+    }
