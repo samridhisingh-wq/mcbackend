@@ -2,9 +2,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import time
-import uuid
 
-# Your existing modules
 from app.validators import validate_csv
 from app.graph_builder import build_graph
 from app.detectors.cycle_detector import detect_cycles
@@ -20,116 +18,72 @@ from app.explanation import build_explanations
 app = FastAPI(
     title="MuleCatcher AML Engine",
     description="Explainable, deterministic AML decision-support system",
-    version="2.0.0"
+    version="2.0.0",
 )
 
-# 🔥 CORS (IMPORTANT)
+# 🔥 CORS (IMPORTANT FOR FRONTEND)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # For hackathon/demo. Lock later.
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+# ✅ Health check
 @app.get("/health")
 def health():
     return {"status": "running"}
 
 
+# ✅ MAIN ANALYZE ENDPOINT
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     start_time = time.time()
 
     try:
-        df = pd.read_csv(file.file)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid CSV file")
+        # 1️⃣ Read CSV into DataFrame
+        contents = await file.read()
+        df = pd.read_csv(pd.io.common.BytesIO(contents))
 
-    # Validate
-    validate_csv(df)
+        # 2️⃣ Validate
+        df = validate_csv(df)
 
-    # Build graph
-    graph = build_graph(df)
+        # 3️⃣ Build Graph
+        graph = build_graph(df)
 
-    # Run detections
-    cycles = detect_cycles(graph)
-    smurfing = detect_smurfing(graph)
-    shells = detect_shell_chains(graph)
+        # 4️⃣ Run detectors correctly
+        cycles = detect_cycles(graph)          # graph-based
+        smurfing = detect_smurfing(df)         # dataframe-based ✅
+        shell_chains = detect_shell_chains(graph)
 
-    rings = merge_rings(cycles + smurfing + shells)
+        # 5️⃣ Merge suspicious structures
+        merged_rings = merge_rings(cycles, smurfing, shell_chains)
 
-    # Score accounts
-    accounts = score_account(graph)
+        # 6️⃣ Score accounts
+        scored_accounts = score_account(df, merged_rings)
 
-    # Apply precision logic
-    accounts = apply_precision_logic(accounts)
+        # 7️⃣ Apply precision logic
+        final_accounts = apply_precision_logic(scored_accounts)
 
-    # Add explanations
-    accounts = build_explanations(accounts)
+        # 8️⃣ Build explanations
+        explanations = build_explanations(final_accounts)
 
-    # Format final output
-    accounts = format_output(accounts)
+        # 9️⃣ Format final output
+        response = format_output(
+            accounts=final_accounts,
+            rings=merged_rings,
+            graph=graph,
+            explanations=explanations
+        )
 
-    # Build edges list for frontend
-    edges = []
-    for u, v, data in graph.edges(data=True):
-        edges.append({
-            "from": str(u),
-            "to": str(v),
-            "amount": data.get("amount", 0),
-            "count": data.get("count", 1)
-        })
+        processing_time = round(time.time() - start_time, 2)
 
-    # Build suspicious accounts list (for compatibility)
-    suspicious_accounts = [
-        {
-            "account_id": acc["id"],
-            "suspicion_score": acc["riskScore"],
-            "detected_patterns": acc.get("patterns", [])
-        }
-        for acc in accounts
-        if acc["riskScore"] >= 40
-    ]
+        response["processing_time"] = processing_time
 
-    elapsed = round(time.time() - start_time, 2)
+        return response
 
-    # Build CaseRun object (matches frontend)
-    case = {
-        "id": f"CASE-{uuid.uuid4().hex[:8]}",
-        "date": time.strftime("%Y-%m-%d"),
-        "fileName": file.filename,
-        "datasetSize": len(df),
-        "nodeCount": len(accounts),
-        "edgeCount": len(edges),
-        "txCount": len(df),
-        "suspiciousCount": len(suspicious_accounts),
-        "ringCount": len(rings),
-        "processingTime": elapsed,
-        "riskExposure": max([acc["riskScore"] for acc in accounts] or [0]),
-        "timeWindow": "",
-        "topPatterns": list(
-            set(
-                pattern
-                for acc in suspicious_accounts
-                for pattern in acc.get("detected_patterns", [])
-            )
-        ),
-        "riskLevel": (
-            "high"
-            if len(suspicious_accounts) > 5
-            else "medium"
-            if len(suspicious_accounts) > 2
-            else "low"
-        ),
-    }
-
-    return {
-        "cases": [case],
-        "currentCase": case,
-        "accounts": accounts,
-        "rings": rings,
-        "edges": edges,
-        "suspicious_accounts": suspicious_accounts
-    }
+    except Exception as e:
+        print("ANALYZE ERROR:", str(e))
+        raise HTTPException(status_code=500, detail=str(e))
