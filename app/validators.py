@@ -1,24 +1,35 @@
 import pandas as pd
 
-REQUIRED_COLUMNS = ["transaction_id","sender_id","receiver_id","amount","timestamp"]
+REQUIRED_COLUMNS = [
+    "transaction_id",
+    "sender_id",
+    "receiver_id",
+    "amount",
+    "timestamp",
+]
 
-def validate_csv(df):
-    summary = {"columns_valid": True,"timestamp_valid": True,"amount_valid": True}
-
+def validate_csv(df: pd.DataFrame) -> pd.DataFrame:
+    # 1️⃣ Check required columns
     for col in REQUIRED_COLUMNS:
         if col not in df.columns:
-            summary["columns_valid"] = False
+            raise ValueError(f"Missing required column: {col}")
 
+    # 2️⃣ Convert timestamp
     try:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], format="%Y-%m-%d %H:%M:%S")
-    except:
-        summary["timestamp_valid"] = False
+        df["timestamp"] = pd.to_datetime(
+            df["timestamp"],
+            format="%Y-%m-%d %H:%M:%S"
+        )
+    except Exception:
+        raise ValueError("Invalid timestamp format. Use YYYY-MM-DD HH:MM:SS")
 
+    # 3️⃣ Convert amount
     try:
         df["amount"] = df["amount"].astype(float)
         if not (df["amount"] > 0).all():
-            summary["amount_valid"] = False
-    except:
-        summary["amount_valid"] = False
+            raise ValueError("Amount must be positive")
+    except Exception:
+        raise ValueError("Invalid amount column")
 
-    return summary
+    # 🔥 RETURN CLEANED DATAFRAME
+    return df
